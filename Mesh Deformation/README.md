@@ -24,51 +24,54 @@
 
 1. **Архитектура на основе интерфейсов** — создан `IMeshDeformer` интерфейс и абстрактный класс `MeshDeformer` для единообразного API различных реализаций
 
-2. **GPU-ускорение через Compute Shaders** — основная реализация `MeshDeformerWithPhysicsByComputeShader` использует:
+2. **GPU-ускорение через Compute Shaders** — реализация `MeshDeformerWithPhysicsByComputeShader` использует:
    - **GraphicsBuffer** для передачи данных вершин на GPU
-   - **Compute Shader** для параллельной обработки всех вершин одновременно
-   - **Constant Buffer** для передачи параметров деформации
+   - **Compute Shader** (`VertexDisplacement.compute`) для параллельной обработки вершин
+   - **ComputeBuffer (Constant Buffer)** для передачи настроек деформации одним блоком
 
-3. **Физическая модель** — реализована пружинная физика:
-   - **Spring Force** — сила, возвращающая вершины в исходное положение
-   - **Damping** — демпфирование для предотвращения колебаний
-   - **Velocity** — учет скорости движения вершин для плавности
+3. **Физическая модель** в HLSL:
+   - **Spring Force** — сила возврата вершин в исходное положение
+   - **Damping** — демпфирование для затухания колебаний
+   - **Velocity** — учёт скорости движения вершин для плавности
+   - **Ограничение смещения** — `maxDistance` ограничивает максимальное смещение вершины
 
-4. **Система воздействий** — поддержка множественных точек деформации:
-   - Точки воздействия добавляются через `AddDeformingForce()`
-   - Радиусы воздействия (`contactRadius`, `closestToContactRadius`) определяют область влияния
-   - Фильтрация по нормалям через скалярное произведение для более точного контроля
+4. **Система воздействий** — поддержка нескольких точек деформации:
+   - Точки добавляются через `AddDeformingForce()`
+   - Радиусы `contactRadius`, `closestToContactRadius` задают область влияния
+   - Сила затухает с расстоянием (in-radius / out-radius)
 
-5. **Настройки деформации** — гибкая система параметров через `DeformSettings`:
+5. **Настройки деформации** — гибкая система через `DeformSettings` и `DeformSettingsCompute`:
    - Силы пружины, демпфирования, воздействия
    - Радиусы влияния
-   - Пороги фильтрации по углам
-   - Масштабирование
+   - Пороги фильтрации по углам (dotVal)
+   - Масштабирование и `maxDistance`
 
 ### Альтернативы и обоснование выбора
 
-Рассматривались варианты:
-- **CPU-обработка** — отложена из-за низкой производительности при большом количестве вершин
-- **Vertex Shader** — не подходит, так как требует обновления меша каждый кадр и не поддерживает физику с состоянием
-- **Compute Shader** — выбран как оптимальное решение: параллельная обработка на GPU, поддержка состояния (velocity), высокая производительность
+- **CPU-обработка** — отложена из-за низкой производительности при большом числе вершин
+- **Vertex Shader** — не подходит: требует обновления меша каждый кадр и не поддерживает состояние (velocity)
+- **Compute Shader** — выбран: параллельная обработка на GPU, поддержка состояния, высокая производительность
 
 ## Ключевые особенности и демонстрируемые навыки
 
-- **Работа с Compute Shaders и GPU-вычислениями** — использование GraphicsBuffer, ComputeBuffer и HLSL для высокопроизводительных операций
-- **Оптимизация производительности** — перенос вычислений на GPU для обработки тысяч вершин параллельно
-- **Архитектурное проектирование** — использование интерфейсов и абстрактных классов для расширяемости и переиспользования кода
-- **Физическое моделирование** — реализация пружинной физики с демпфированием и учетом скорости
-- **Работа с нативными структурами** — использование `StructLayout` и `UnsafeUtility` для эффективной передачи данных между CPU и GPU
-- **Управление ресурсами** — правильное освобождение GraphicsBuffer через `IDisposable`
+- **Compute Shaders и GPU-вычисления** — HLSL, GraphicsBuffer, ComputeBuffer, Constant Buffer
+- **Оптимизация** — перенос вычислений на GPU, использование `cbuffer` для параметров
+- **Архитектурное проектирование** — интерфейсы и абстрактные классы для расширяемости
+- **Физическое моделирование** — пружинная физика с демпфированием и ограничением смещения
+- **Совпадение структур CPU/GPU** — `StructLayout`, `UnsafeUtility` для передачи данных
+- **Управление ресурсами** — освобождение буферов через `IDisposable`
 
 ## Структура кода в папке (Code Overview)
 
-- **`IMeshDeformer.cs`** — интерфейс, определяющий контракт для всех реализаций деформации
-- **`MeshDeformer.cs`** — абстрактный базовый класс с общей логикой (хранение вершин, нормалей, точек воздействия)
-- **`MeshDeformerWithPhysicsByComputeShader.cs`** — основная реализация с GPU-ускорением через Compute Shader
-- **`DeformSettings.cs`** — класс настроек деформации с валидацией и методами передачи параметров в Compute Shader
-- **`DeformSettingsCompute.cs`** — структура для передачи настроек в Compute Shader (оптимизирована для GPU)
-- **`VertexData.cs`** — структура данных вершины для передачи на GPU (original, displaced, velocity, normal)
+| Файл | Назначение |
+|------|------------|
+| `IMeshDeformer.cs` | Интерфейс контракта для реализаций деформации |
+| `MeshDeformer.cs` | Абстрактный базовый класс (вершины, нормали, точки воздействия) |
+| `MeshDeformerWithPhysicsByComputeShader.cs` | Реализация с GPU-ускорением через Compute Shader |
+| `VertexDisplacement.compute` | HLSL Compute Shader для смещения вершин |
+| `DeformSettings.cs` | Класс настроек деформации с валидацией |
+| `DeformSettingsCompute.cs` | Структура настроек для GPU (Constant Buffer) |
+| `VertexData.cs` | Структура вершины для GPU (original, displaced, velocity, normal) |
 
 ## Примеры использования (Usage Examples)
 
@@ -134,10 +137,17 @@ meshDeformer.AddDeformingForce(contactPoint); // contactPoint в мировых 
 ```csharp
 public override void Update()
 {
-    // Создаем буфер для точек воздействия
+    if (deformingForcePoints.Count == 0)
+    {
+        if (deformBuffer != null)
+            deformBuffer.Release();
+    }
+
+    compute.SetInt("deformCount", deformingForcePoints.Count);
+
     deformBuffer = new GraphicsBuffer(
         GraphicsBuffer.Target.Structured,
-        deformingForcePoints.Count == 0 ? 6 : deformingForcePoints.Count,
+        deformingForcePoints.Count,
         UnsafeUtility.SizeOf<Vector3>()
     );
     deformBuffer.SetData(deformingForcePoints);
@@ -163,48 +173,98 @@ public override void Update()
 }
 ```
 
-### Пример 4: Настройки деформации
+### Пример 4: Структура VertexDisplacement.compute (HLSL)
 
-```csharp
-[Serializable]
-public class DeformSettings
+```hlsl
+#pragma kernel ComputeVertexDisplacement
+
+struct VertexData
 {
-    [Header("Spring")]
-    public float springForce = 20f;        // Сила возврата в исходное положение
-    public float edgeSpringForce = 15f;    // Дополнительная сила для краев
-    public float damping = 5f;             // Демпфирование колебаний
-    
-    [Header("Main Force")]
-    public float force = 10f;              // Основная сила воздействия
-    public float contactRadius = 0.012f;  // Радиус прямого воздействия
-    public float outForce = 1f;            // Сила для вершин вне радиуса
-    
-    [Header("Filtering")]
-    [Range(-1f, 0.5f)]
-    public float dotValExcludeForce = -.08f;      // Порог исключения вершины
-    public float dotValMultipliedForce = -.85f;   // Порог увеличенной силы
-    public float dotValEdgeForce = -.08f;         // Порог рассеивающей силы
+    float3 original;
+    float3 displaced;
+    float3 velocity;
+    float3 normal;
+};
+
+cbuffer DeformSettingsCompute
+{
+    float maxDistance;
+    float deltaTime;
+    float springForce;
+    float edgeSpringForce;
+    float damping;
+    float contactRadius;
+    float force;
+    float closestToContactRadius;
+    float edgeForce;
+    float outForce;
+    float scale;
+    // ... dotVal-параметры
+};
+
+uint deformCount;
+StructuredBuffer<float3> deformingForcePoints;
+RWStructuredBuffer<VertexData> vertices;
+
+[numthreads(4, 1, 1)]
+void ComputeVertexDisplacement(uint id : SV_DispatchThreadID)
+{
+    VertexData v = vertices[id];
+
+    // Применение сил от точек воздействия
+    for (uint i = 0; i < deformCount; i++)
+    {
+        float3 deformPoint = deformingForcePoints[i];
+        float3 dir = v.displaced - deformPoint;
+        float dist = length(dir * scale);
+        float inRadius = step(contactRadius, dist);
+        v.velocity += normalize(dir) * (lerp(force, outForce, inRadius) / (dist * dist + eps)) * deltaTime;
+    }
+
+    // Пружина и демпфирование
+    float3 displacement = (v.displaced - v.original) * scale;
+    v.velocity -= displacement * springForce * deltaTime;
+    v.velocity *= 1.0 - damping * deltaTime;
+    v.displaced += v.velocity * deltaTime;
+
+    // Ограничение максимального смещения
+    float len = length(v.displaced - v.original);
+    v.displaced = len <= maxDistance ? v.displaced : v.original + normalize(v.displaced - v.original) * maxDistance;
+
+    vertices[id] = v;
 }
 ```
 
-### Пример 5: Структура данных для GPU
+### Пример 5: DeformSettingsCompute и Constant Buffer
 
 ```csharp
 [StructLayout(LayoutKind.Sequential)]
-public struct VertexData
+public struct DeformSettingsCompute
 {
-    public Vector3 original;   // Исходная позиция вершины
-    public Vector3 displaced;  // Текущая деформированная позиция
-    public Vector3 velocity;    // Скорость движения вершины (для физики)
-    public Vector3 normal;      // Нормаль вершины (для фильтрации)
-}
+    public float maxDistance;
+    public float deltaTime;
+    public float springForce;
+    public float edgeSpringForce;
+    public float damping;
+    public float dotValExcludeForce;
+    public float dotValMultipliedForce;
+    public float dotValEdgeForce;
+    public float contactRadius;
+    public float force;
+    public float closestToContactRadius;
+    public float edgeForce;
+    public float outForce;
+    public float scale;
 
-// Использование UnsafeUtility для определения размера структуры
-vertexBuffer = new GraphicsBuffer(
-    GraphicsBuffer.Target.Structured,
-    vertexCount,
-    UnsafeUtility.SizeOf<VertexData>() // Автоматический расчет размера
-);
+    public void CopyFrom(DeformSettings settings)
+    {
+        maxDistance = settings.maxDistance;
+        deltaTime = Time.fixedDeltaTime;
+        springForce = settings.springForce;
+        // ... копирование остальных полей
+        scale = settings.Scale;
+    }
+}
 ```
 
 ### Пример 6: Освобождение ресурсов
@@ -236,4 +296,4 @@ using (var deformer = new MeshDeformerWithPhysicsByComputeShader(deformer))
 
 ---
 
-**Технологии:** Unity, C#, Compute Shaders, HLSL, GraphicsBuffer, GPU Computing, Физическое моделирование, Структуры данных для GPU
+**Технологии:** Unity, C#, Compute Shaders, HLSL, GraphicsBuffer, ComputeBuffer, Constant Buffer, GPU Computing, физическое моделирование

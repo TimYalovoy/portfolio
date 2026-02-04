@@ -94,7 +94,7 @@ namespace VertexDisplacement
             compute.SetInt("deformCount", deformingForcePoints.Count);
             deformBuffer = new GraphicsBuffer(
                 GraphicsBuffer.Target.Structured,
-                deformingForcePoints.Count == 0 ? 6 : deformingForcePoints.Count,
+                deformingForcePoints.Count,
                 UnsafeUtility.SizeOf<Vector3>()
             );
             deformBuffer.SetData(deformingForcePoints);

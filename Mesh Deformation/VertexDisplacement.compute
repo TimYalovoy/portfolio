@@ -1,0 +1,78 @@
+#pragma kernel ComputeVertexDisplacement
+
+struct VertexData
+{
+    float3 original;
+    float3 displaced;
+    float3 velocity;
+    float3 normal;
+};
+
+cbuffer DeformSettingsCompute
+{
+    float maxDistance;
+    
+    float deltaTime;
+    
+    float springForce;
+    float edgeSpringForce;
+    float damping;
+    
+    float dotValExcludeForce;
+    float dotValMultipliedForce;
+    float dotValEdgeForce;
+    
+    float contactRadius;
+    float force;
+    
+    float closestToContactRadius;
+    float edgeForce;
+    
+    float outForce;
+
+    float scale;
+};
+
+uint deformCount;
+StructuredBuffer<float3> deformingForcePoints;
+RWStructuredBuffer<VertexData> vertices;
+
+float eps = 1e-5;
+
+[numthreads(4, 1, 1)]
+void ComputeVertexDisplacement(uint id : SV_DispatchThreadID)
+{
+    VertexData v = vertices[id];
+
+    for (uint i = 0; i < deformCount; i++)
+    {
+        float3 deformPoint = deformingForcePoints[i];
+        float3 dir = v.displaced - deformPoint;
+        dir *= scale;
+        float dist = length(dir);
+
+        float inRadius = step(contactRadius, dist);
+        v.velocity += normalize(dir) * (lerp(force, outForce, inRadius) / (dist * dist + eps)) * deltaTime;
+    }
+    
+    float3 displacement = v.displaced - v.original;
+    displacement *= scale;
+    v.velocity -= displacement * springForce * deltaTime;
+    
+    v.velocity *= 1.0 - damping * deltaTime;
+    
+    v.displaced += v.velocity * deltaTime;
+    
+    float len = length(v.displaced - v.original);
+    
+    float inRange = step(len, maxDistance + eps);
+    float notInRange = Reverse(inRange);
+    v.displaced = (v.displaced * notInRange) + ((v.original + normalize(v.displaced - v.original) * maxDistance) * inRange);
+
+    vertices[id] = v;
+}
+
+float Reverse(float cond)
+{
+    return 1.0 - cond;
+}
